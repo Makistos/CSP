@@ -6,6 +6,7 @@ import sys
 import getopt
 import pprint
 import random
+import logging
 
 # Default values for global settings
 iterations = 1
@@ -45,6 +46,7 @@ def greedy_solve(data):
                 curr.append(item)
         tmp_data[:] = [x for x in tmp_data if x not in curr]
         solution.append(values_only(curr))
+
     return solution
 
 
@@ -70,7 +72,7 @@ def match_solve(data):
         item1 = tmp_data[0]
         for i in range(1, len(tmp_data)):
             item2 = tmp_data[i]
-            for j in range(i, len(tmp_data)):
+            for j in range(i+1, len(tmp_data)-i):
                 if item1[1] + item2[1] + tmp_data[j][1] >= MAX_WIDTH*0.95 and \
                     item1[1] + item2[1] + tmp_data[j][1] <= MAX_WIDTH:
                     solution.append([item1[1], item2[1], tmp_data[j][1]])
@@ -91,6 +93,7 @@ def optimize(dataset, strategy):
     solution = []
 
     for i in range(1, iterations+1):
+        logging.debug('Run %s' % i)
         if strategy == "NONE":
             # Just split the items into rows
             tmp = simple_solve(values_only(dataset))
@@ -121,8 +124,9 @@ def optimize(dataset, strategy):
             # the rest.
             tmp = match_solve(dataset)
 
-        #pprint.pprint(tmp)
         waste = calc_waste(tmp)
+        logging.debug(pprint.pprint(tmp))
+        logging.debug("Waste: %s" % waste)
         if waste < best:
             best = waste
             solution = tmp
@@ -133,42 +137,62 @@ def optimize(dataset, strategy):
 def main(argv):
 
     global iterations
-    filename = '1000orders.txt'
+    filename = 'test.txt'
     strategy = 'GREEDYMATCH'
+    logfile = ''
+    loglevel = 'ERROR'
 
     try:
-        opts, args = getopt.getopt(argv, 'i:n:s:', ['input=', 'numcount=', 'strategy='])
-    except getopt.GetoptError:
-            print "Invalid parameters"
+        opts, args = getopt.getopt(argv, 'i:l:m:n:s:', ['input=', 'log=', 'msglevel=', 'numcount=', 'strategy='])
+    except getopt.GetoptError as err:
+        print str(err)
+        sys.exit(2)
 
     for opt, arg in opts:
         if opt in ('-i', '--input'):
             filename = arg
+        if opt in ('-l', '--log'):
+            logfile = arg
+        if opt in ('-m', '--msglevel'):
+            loglevel = arg
         if opt in ('-n', '--numcount'):
             iterations = int(arg)
         if opt in ('-s', '--strategy'):
             strategy = arg
 
+    # Set up logging
+    numeric_level = getattr(logging, loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+    if logfile != '':
+        logging.basicConfig(level=numeric_level, filename=logfile)
+    else:
+        logging.basicConfig(level=numeric_level)
+
     if filename == '':
-        print "No input file given"
-        exit()
+        raise ValueError('No input file given')
 
     widths = []
-    with open(filename) as f:
-        for num, line in enumerate(f, 1):
-            widths.append((num, int(line)))
+    try:
+        with open(filename) as f:
+            for num, line in enumerate(f, 1):
+                widths.append((num, int(line)))
+    except IOError:
+        print 'File not found: %s' % filename
+        sys.exit(2)
 
     for i in range(len(widths)):
         if widths[i][1] > MAX_WIDTH:
-            print "Invalid width in inputs"
+            logging.error('Invalid width in inputs')
 
-    print "Theoretical best solution: " + str(sum(values_only(widths))/1000+1) + " rows."
+    logging.info('Theoretical best solution: %s rows' % str(sum(values_only(widths))/1000+1))
     result = optimize(widths, strategy)
 
-    print "Best solution: "
+    print 'Best solution:'
     pprint.pprint(result)
-    print "Number of rows: " + str(len(result))
-    print "Waste: " + str(calc_waste(result))
+    logging.info('Total number: %s' %str(len([x for sublist in result for x in sublist])))
+    logging.debug('Number of rows: ' + str(len(result)))
+    logging.info('Waste: %s' % str(calc_waste(result)))
 
 if __name__ == '__main__':
     main(sys.argv[1:])
