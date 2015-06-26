@@ -185,14 +185,18 @@ def main(argv):
         if widths[i][1] > MAX_WIDTH:
             logging.error('Invalid width in inputs')
 
-    logging.info('Theoretical best solution: %s rows' % str(sum(values_only(widths))/1000+1))
     result = optimize(widths, strategy)
 
     print 'Best solution:'
     pprint.pprint(result)
-    logging.info('Total number: %s' %str(len([x for sublist in result for x in sublist])))
-    logging.debug('Number of rows: ' + str(len(result)))
+    ideal_result = sum(values_only(widths))/MAX_WIDTH+1
+    logging.info('Theoretical best solution: %s rows' % str(ideal_result))
+    logging.info('Total number: %s' % str(len([x for sublist in result for x in sublist])))
+    logging.info('Number of rows: {:.0f}'.format(len(result)))
+    logging.info('Percentage of theoretically best: {:.2%}'.format(float(len(result))/float(ideal_result)))
     logging.info('Waste: %s' % str(calc_waste(result)))
+    logging.info('Rows where width < 95%:')
+    logging.info(pprint.pprint([str(sum(x)) for x in result if sum(x) < MAX_WIDTH*0.95]))
 
 if __name__ == '__main__':
     main(sys.argv[1:])
