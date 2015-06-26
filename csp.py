@@ -7,28 +7,27 @@ import getopt
 import pprint
 import random
 
+# Default values for global settings
 iterations = 1
 MAX_WIDTH = 1000
 
-calc_waste = lambda li: sum(map(lambda x: 1000-x, [sum(b) for b in li]))
+calc_waste = lambda li: sum(map(lambda x: MAX_WIDTH-x, [sum(b) for b in li]))
+values_only = lambda li: [x[1] for x in li]
 
 
 def simple_solve(data):
     solution = []
-    w = 0
     curr = []
+    tmp_data = data[:]
 
-    for i in data:
-        if i + w >= MAX_WIDTH:
-            solution.append(curr[:])
-            curr[:] = []
-            curr.append(i)
-            w = i
-        else:
-            curr.append(i)
-            w += i
+    while len(tmp_data) > 0:
+        while tmp_data[0] + sum(curr) <= MAX_WIDTH:
+            curr.append(tmp_data.pop(0))
+            if len(tmp_data) == 0:
+                break
+        solution.append(curr[:])
+        curr[:] = []
 
-    solution.append(curr)
     return solution
 
 
@@ -38,56 +37,92 @@ def greedy_solve(data):
     curr = []
     while len(tmp_data) > 0:
         curr[:] = []
+        # Randomly select an item from the list and move to first row
         idx = random.randrange(0, len(tmp_data))
-#        first = data[idx]
-#        data.remove(idx)
         curr.append(tmp_data.pop(idx))
-        flag = True
-        while flag:
-            tot = curr[0]
-            for i in range(0, len(tmp_data)):
-                # Find position of first item that fits
-                if tot + tmp_data[i] > MAX_WIDTH:
-                    break
-            while sum(curr) + tmp_data[i] <= MAX_WIDTH:
-                curr.append(tmp_data.pop(i))
-            flag = False
-            solution.append(curr)
-            #and sum(curr) + tmp_data[0] <= MAX_WIDTH:
-#            tot += data[0]
-#            curr.append(tmp_data.pop())
-
-#        solution.append(curr)
-    pprint.pprint(solution)
+        for item in tmp_data:
+            if item[1] + sum(values_only(curr)) <= MAX_WIDTH:
+                curr.append(item)
+        tmp_data[:] = [x for x in tmp_data if x not in curr]
+        solution.append(values_only(curr))
     return solution
 
+
+def match_solve(data):
+    solution = []
+    tmp_data = data[:]
+    tmp_data2 = []
+
+    while tmp_data:
+        item = tmp_data[0]
+        for i in range(1, len(tmp_data)):
+            if item[1] + tmp_data[i][1] >= MAX_WIDTH*0.95 and item[1] + tmp_data[i][1] <= MAX_WIDTH:
+                solution.append([item[1], tmp_data[i][1]])
+                tmp_data2.append(item)
+                tmp_data2.append(tmp_data[i])
+                del tmp_data[i]
+                break
+        del tmp_data[0]
+
+    tmp_data[:] = [x for x in data if x not in tmp_data2]
+
+    while tmp_data:
+        item1 = tmp_data[0]
+        for i in range(1, len(tmp_data)):
+            item2 = tmp_data[i]
+            for j in range(i, len(tmp_data)):
+                if item1[1] + item2[1] + tmp_data[j][1] >= MAX_WIDTH*0.95 and \
+                    item1[1] + item2[1] + tmp_data[j][1] <= MAX_WIDTH:
+                    solution.append([item1[1], item2[1], tmp_data[j][1]])
+                    tmp_data2.append(item1)
+                    tmp_data2.append(item2)
+                    tmp_data2.append(tmp_data[j])
+                    del tmp_data[j]
+                    del tmp_data[i]
+        del tmp_data[0]
+
+    tmp_data[:] = [x for x in data if x not in tmp_data2]
+
+    random.shuffle(tmp_data)
+    return solution + greedy_solve(tmp_data)
+
 def optimize(dataset, strategy):
-    best = len(dataset) * MAX_WIDTH # Would indicate every item goes into its own row
+    best = len(dataset) * MAX_WIDTH # Would indicate every item goes into its own row, i.e. worst case
     solution = []
 
     for i in range(1, iterations+1):
-        print "Run #" + str(i)
-        l = []
         if strategy == "NONE":
-            l = dataset
-            tmp = simple_solve(dataset)
+            # Just split the items into rows
+            tmp = simple_solve(values_only(dataset))
         elif strategy == "ASORT":
-            l = sorted(dataset)
-            tmp = simple_solve(sorted(dataset))
+            # Sort ascending, then split
+            tmp = simple_solve(sorted(values_only(dataset)))
         elif strategy == "DSORT":
-            l = list(reversed(sorted(dataset)))
-            tmp = simple_solve(list(reversed(sorted(dataset))))
+            # Sort descending, then split
+            tmp = simple_solve(list(reversed(sorted(values_only(dataset)))))
         elif strategy == "RANDOM":
+            # Randomise the items, then split
             random.shuffle(dataset)
-            l = dataset
-            tmp = simple_solve(dataset)
+            tmp = simple_solve(values_only(dataset))
         elif strategy == "GREEDY":
+            # Randomly select first item for each row, go through list to
+            # find items matching
+            tmp = greedy_solve(dataset)
+        elif strategy == "GREEDYSORT":
+            # Same as greedy, but sort list descending first
             tmp = greedy_solve(list(reversed(sorted(dataset))))
+        elif strategy == "GREEDYRANDOM":
+            # Same as greedy, but randomize list first
+            random.shuffle(dataset)
+            tmp = greedy_solve(dataset)
+        elif strategy == "GREEDYMATCH":
+            # First tries to find pairs and triplets that are exactly
+            # MAX_WIDTH and only after that runs greedy strategy on
+            # the rest.
+            tmp = match_solve(dataset)
 
-        #pprint.pprint(l)
         #pprint.pprint(tmp)
         waste = calc_waste(tmp)
-        #print "Waste: " + str(waste)
         if waste < best:
             best = waste
             solution = tmp
@@ -98,8 +133,8 @@ def optimize(dataset, strategy):
 def main(argv):
 
     global iterations
-    filename = 'orders.txt'
-    strategy = 'GREEDY'
+    filename = '1000orders.txt'
+    strategy = 'GREEDYMATCH'
 
     try:
         opts, args = getopt.getopt(argv, 'i:n:s:', ['input=', 'numcount=', 'strategy='])
@@ -118,18 +153,21 @@ def main(argv):
         print "No input file given"
         exit()
 
-    widths = [int(line.strip()) for line in open(filename) if line.strip().isdigit()]
+    widths = []
+    with open(filename) as f:
+        for num, line in enumerate(f, 1):
+            widths.append((num, int(line)))
 
     for i in range(len(widths)):
-        if widths[i] > MAX_WIDTH:
+        if widths[i][1] > MAX_WIDTH:
             print "Invalid width in inputs"
 
-    #pprint.pprint(widths)
+    print "Theoretical best solution: " + str(sum(values_only(widths))/1000+1) + " rows."
     result = optimize(widths, strategy)
 
     print "Best solution: "
-    #pprint.pprint(result)
-    print "Number of cuts: " + str(len(result))
+    pprint.pprint(result)
+    print "Number of rows: " + str(len(result))
     print "Waste: " + str(calc_waste(result))
 
 if __name__ == '__main__':
